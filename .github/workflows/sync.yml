@@ -24,8 +24,8 @@ jobs:
       - name: Compare tags
         id: check
         run: |
-          # Tags permanently blocked on mirror (immutability)
-          BLOCKED="v0.3.3 v0.3.4 v0.3.6"
+          # Tags permanently blocked on mirror (immutability) or manually synced with -r1 suffix
+          BLOCKED="v0.3.3 v0.3.4 v0.3.5 v0.3.6"
 
           SOURCE_TAGS=$(gh api repos/$SOURCE_REPO/tags | jq -r '.[].name' | sort)
           CURRENT_TAGS=$(gh api repos/$GITHUB_REPOSITORY/tags | jq -r '.[].name' | sort)
