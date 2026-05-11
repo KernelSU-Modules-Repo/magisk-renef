@@ -1,0 +1,5 @@
+{
+    "name": "MagiskRenef",
+    "summary": "Auto-packages renef_server for Android dynamic instrumentation",
+    "sourceUrl": "https://github.com/vichhka-git/magisk-renef"
+}
