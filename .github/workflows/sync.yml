@@ -1,8 +1,11 @@
-name: Sync release
+name: Sync releases from source
+
 on:
   workflow_dispatch:
   repository_dispatch:
     types: [sync-release]
+  schedule:
+    - cron: '0 14 * * *'
 
 permissions:
   contents: write
@@ -10,7 +13,6 @@ permissions:
 env:
   GH_TOKEN: ${{ github.token }}
   SOURCE_REPO: 'vichhka-git/magisk-renef'
-  MODULE_NAME: 'MagiskRenef'
 
 jobs:
   get_tags:
@@ -19,14 +21,21 @@ jobs:
       tags: ${{ steps.check.outputs.tags }}
       latest: ${{ steps.check.outputs.latest }}
     steps:
-      - name: Check tags
+      - name: Compare tags
         id: check
         run: |
+          # Tags permanently blocked on mirror (immutability)
+          BLOCKED="v0.3.3 v0.3.4 v0.3.6"
+
           SOURCE_TAGS=$(gh api repos/$SOURCE_REPO/tags | jq -r '.[].name' | sort)
           CURRENT_TAGS=$(gh api repos/$GITHUB_REPOSITORY/tags | jq -r '.[].name' | sort)
-          MISSING=$(comm -23 <(echo "$SOURCE_TAGS") <(echo "$CURRENT_TAGS") | grep -v "^v0.3.6$" || true)
+
+          FILTERED_SOURCE=$(echo "$SOURCE_TAGS" | grep -v -w "$BLOCKED" || true)
+
+          MISSING=$(comm -23 <(echo "$FILTERED_SOURCE") <(echo "$CURRENT_TAGS") || true)
           MISSING_JSON=$(echo "$MISSING" | jq -R -s -c 'split("\n")[:-1] | map(select(. != ""))')
           echo "tags=$MISSING_JSON" >> $GITHUB_OUTPUT
+
           LATEST=$(echo "$SOURCE_TAGS" | tail -1)
           echo "latest=$LATEST" >> $GITHUB_OUTPUT
 
@@ -37,25 +46,34 @@ jobs:
     strategy:
       matrix:
         tag: ${{ fromJson(needs.get_tags.outputs.tags) }}
+      fail-fast: false
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Pull release artifact and notes
+      - name: Download asset from source
         run: |
-          gh release download ${{ matrix.tag }} --repo $SOURCE_REPO --pattern "${MODULE_NAME}-*.zip"
-          mv ${MODULE_NAME}-*.zip "${MODULE_NAME}.zip"
-          BODY=$(gh release view ${{ matrix.tag }} --repo $SOURCE_REPO --json body -q .body)
-          echo "RELEASE_BODY<<EOF" >> $GITHUB_ENV
-          echo "$BODY" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          # Get the zip filename from source release
+          ZIP_NAME=$(gh release view ${{ matrix.tag }} --repo $SOURCE_REPO --json assets -q '.assets[0].name')
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
 
-      - name: Create Release
-        continue-on-error: true
-        uses: KernelSU-Modules-Repo/module_release@main
-        with:
-          tag_name: ${{ matrix.tag }}
-          name: "MagiskRenef ${{ matrix.tag }}"
-          make_latest: ${{ matrix.tag == needs.get_tags.outputs.latest }}
-          file: "${{ env.MODULE_NAME }}.zip"
-          body: ${{ env.RELEASE_BODY }}
+          gh release download ${{ matrix.tag }} --repo $SOURCE_REPO --pattern "${ZIP_NAME}"
+          echo "Downloaded: $ZIP_NAME"
+
+      - name: Create release with asset
+        run: |
+          TAG="${{ matrix.tag }}"
+          IS_LATEST="${{ matrix.tag == needs.get_tags.outputs.latest }}"
+
+          # Get release body from source
+          BODY=$(gh release view "$TAG" --repo $SOURCE_REPO --json body -q .body)
+
+          if [ "$IS_LATEST" = "true" ]; then
+            gh release create "$TAG" "$ZIP_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "MagiskRenef $TAG" \
+              --notes "$BODY" \
+              --latest
+          else
+            gh release create "$TAG" "$ZIP_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "MagiskRenef $TAG" \
+              --notes "$BODY"
+          fi
