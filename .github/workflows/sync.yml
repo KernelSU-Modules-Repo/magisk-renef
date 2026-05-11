@@ -24,7 +24,7 @@ jobs:
         run: |
           SOURCE_TAGS=$(gh api repos/$SOURCE_REPO/tags | jq -r '.[].name' | sort)
           CURRENT_TAGS=$(gh api repos/$GITHUB_REPOSITORY/tags | jq -r '.[].name' | sort)
-          MISSING=$(comm -23 <(echo "$SOURCE_TAGS") <(echo "$CURRENT_TAGS"))
+          MISSING=$(comm -23 <(echo "$SOURCE_TAGS") <(echo "$CURRENT_TAGS") | grep -v "^v0.3.6$" || true)
           MISSING_JSON=$(echo "$MISSING" | jq -R -s -c 'split("\n")[:-1] | map(select(. != ""))')
           echo "tags=$MISSING_JSON" >> $GITHUB_OUTPUT
           LATEST=$(echo "$SOURCE_TAGS" | tail -1)
